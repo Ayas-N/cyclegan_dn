@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
-
+from .dense_norm import DenseNorm2d 
 
 ###############################################################################
 # Helper Functions
@@ -30,6 +30,14 @@ def get_norm_layer(norm_type="instance"):
         norm_layer = functools.partial(nn.SyncBatchNorm, affine=True, track_running_stats=True)
     elif norm_type == "instance":
         norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
+
+    elif norm_type == "dense":
+        def norm_layer(channels):
+            return DenseNorm2d(channels)
+        
+        norm_layer.instance_like = True
+        return norm_layer
+
     elif norm_type == "none":
 
         def norm_layer(x):
@@ -335,6 +343,7 @@ class ResnetGenerator(nn.Module):
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
 
+        use_bias = use_bias or getattr(norm_layer, "instance_like", False)
         model = [nn.ReflectionPad2d(3), nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=use_bias), norm_layer(ngf), nn.ReLU(True)]
 
         n_downsampling = 2

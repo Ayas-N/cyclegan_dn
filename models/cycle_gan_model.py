@@ -2,7 +2,7 @@ import torch
 import itertools
 from util.image_pool import ImagePool
 from .base_model import BaseModel
-from . import networks
+from . import networks, dense_context
 
 
 class CycleGANModel(BaseModel):
@@ -107,12 +107,19 @@ class CycleGANModel(BaseModel):
         The option 'direction' can be used to swap domain A and domain B.
         """
         AtoB = self.opt.direction == "AtoB"
+        self.x_anchor = input.get('x_anchor', None)
+        self.y_anchor = input.get('y_anchor', None)
         self.real_A = input["A" if AtoB else "B"].to(self.device)
         self.real_B = input["B" if AtoB else "A"].to(self.device)
+        if self.x_anchor is None:
+            B = self.real_A.size(0)
+            self.x_anchor = torch.zeros(B, dtype=torch.long, device=self.device)
+            self.y_anchor = torch.zeros(B, dtype=torch.long, device=self.device)
         self.image_paths = input["A_paths" if AtoB else "B_paths"]
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
+        dense_context.set_anchors(self.x_anchor, self.y_anchor)
         self.fake_B = self.netG_A(self.real_A)  # G_A(A)
         self.rec_A = self.netG_B(self.fake_B)  # G_B(G_A(A))
         self.fake_A = self.netG_B(self.real_B)  # G_B(B)

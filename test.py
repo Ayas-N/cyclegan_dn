@@ -35,6 +35,32 @@ from models import create_model
 from util.visualizer import save_images
 from util import html
 import torch
+import re
+
+from models.dense_norm_core import (
+    init_dense_norm,
+    use_dense_norm,
+    not_use_dense_norm,
+)
+
+CODE2DIR = {'b': 'Benign', 'is': 'Insitu', 'iv': 'Invasive', 'n': 'Normal'}
+
+def class_dir_from_path(p: str) -> str:
+    name = os.path.basename(p).lower()
+    m = re.search(r'(?:^|_)(b|is|iv|n)\d+', name)  # matches b0002, is0002, iv0002, n0002
+    return CODE2DIR.get(m.group(1), 'Unknown') if m else 'Unknown'
+
+def _infer_grid_shape(make_dataset_fn, opt):
+    tmp = make_dataset_fn(opt)
+    max_y = max_x = -1
+    for d in tmp:
+        # prefer anchors provided by your dataset
+        ya = int(d.get('y_anchor', 0))
+        xa = int(d.get('x_anchor', 0))
+        if ya > max_y: max_y = ya
+        if xa > max_x: max_x = xa
+    # (+1 because anchors are indices)
+    return (max_y + 1 if max_y >= 0 else 1, max_x + 1 if max_x >= 0 else 1)
 
 try:
     import wandb
@@ -44,7 +70,7 @@ except ImportError:
 
 if __name__ == "__main__":
     opt = TestOptions().parse()  # get test options
-    opt.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    opt.device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     # hard-code some parameters for test
     opt.num_threads = 0  # test code only supports num_threads = 0
     opt.batch_size = 1  # test code only supports batch_size = 1
@@ -54,9 +80,25 @@ if __name__ == "__main__":
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     model = create_model(opt)  # create a model given opt.model and other options
     model.setup(opt)  # regular setup: load and print networks; create schedulers
+    grid_h, grid_w = _infer_grid_shape(create_dataset, opt)
+    init_dense_norm(model.netG_A, y_anchor_num=grid_h, x_anchor_num=grid_w)
+    init_dense_norm(model.netG_B, y_anchor_num=grid_h, x_anchor_num=grid_w) 
+    # COLLECTION PASS (fast): iterate once so DN can collect mean/std per anchor.
+    collect_dataset = create_dataset(opt)   # fresh iterator
+    model.eval()
+    with torch.no_grad():
+        for data in collect_dataset:
+            model.set_input(data)       
+            model.forward()
+            _ = model.netG_A(model.real_A)  
+    # Switch DN to interpolation ("use") mode with a 1-neighborhood padding
+    # not_use_dense_norm(model.netG_A)
+    # not_use_dense_norm(model.netG_B)
+    use_dense_norm(model.netG_A, padding = 1)
+    use_dense_norm(model.netG_B, padding = 1)
 
     # create a website
-    web_dir = Path(opt.results_dir) / opt.name / f"{opt.phase}_{opt.epoch}"  # define the website directory
+    web_dir = Path(opt.results_dir) / opt.name / f"{opt.phase}_{opt.epoch}"  
     if opt.load_iter > 0:  # load_iter is 0 by default
         web_dir = Path(f"{web_dir}_iter{opt.load_iter}")
     print(f"creating web directory {web_dir}")
@@ -75,5 +117,8 @@ if __name__ == "__main__":
         img_path = model.get_image_paths()  # get image paths
         if i % 5 == 0:  # save images to an HTML file
             print(f"processing ({i:04d})-th image... {img_path}")
+        if 'fake_A' not in visuals: 
+            continue
+        visuals = {'fake_A': visuals['fake_A']}
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)
     webpage.save()  # save the HTML

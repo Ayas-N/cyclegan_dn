@@ -1,5 +1,6 @@
 import numpy as np
 import sys
+import re
 import ntpath
 import time
 from . import util, html
@@ -23,13 +24,19 @@ def save_images(webpage, visuals, image_path, aspect_ratio=1.0, width=256):
     """
     image_dir = webpage.get_image_dir()
     name = Path(image_path[0]).stem
+    code2dir = {'b': 'Benign', 'is': 'Insitu', 'iv': 'Invasive', 'n': 'Normal'}
+    m = re.search(r'(?:^|_)(b|is|iv|n)\d+', name.lower())
+    class_dir = code2dir.get(m.group(1), 'Unknown') if m else 'Unknown'
+    # subfolder under the webpage's images directory
+    dest_dir = image_dir / class_dir
+    dest_dir.mkdir(parents=True, exist_ok=True)
 
     webpage.add_header(name)
     ims, txts, links = [], [], []
     for label, im_data in visuals.items():
         im = util.tensor2im(im_data)
         image_name = f"{name}_{label}.png"
-        save_path = image_dir / image_name
+        save_path = dest_dir / image_name
         util.save_image(im, save_path, aspect_ratio=aspect_ratio)
         ims.append(image_name)
         txts.append(label)
