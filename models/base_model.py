@@ -99,7 +99,7 @@ class BaseModel(ABC):
                         net = net.module
                     print(f"loading the model from {load_path}")
 
-                    state_dict = torch.load(load_path, map_location=str(self.device), weights_only=True)
+                    state_dict = torch.load(load_path, map_location=str(self.device), weights_only=False)
 
                     if hasattr(state_dict, "_metadata"):
                         del state_dict._metadata

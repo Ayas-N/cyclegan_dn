@@ -89,6 +89,29 @@ class Visualizer:
             now = time.strftime("%c")
             log_file.write(f"================ Training Loss ({now}) ================\n")
 
+    def log_eval_metrics(self, total_iters: int, metrics: dict, prefix: str = "eval"):
+        """Log scalar evaluation metrics to Weights & Biases.
+
+        Example keys in `metrics`:
+           {'fid_A2B': 68.4, 'fid_B2A': 71.0, 'ssim_cycle_A': 0.84, 'psnr_cycle_B': 25.6}
+        """
+        # Only log on main process (rank 0)
+        if self.use_wandb and self.wandb_run:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                to_log = {f"{prefix}/{k}": float(v) for k, v in metrics.items()}
+                self.wandb_run.log(to_log, step=total_iters)
+
+    def log_eval_images(self, total_iters: int, visuals: dict, prefix: str = "eval"):
+        """Optionally log a small panel of evaluation images to W&B."""
+        if self.use_wandb and self.wandb_run:
+            if not dist.is_initialized() or dist.get_rank() == 0:
+                ims_dict = {}
+                for label, image in visuals.items():
+                    image_numpy = util.tensor2im(image)  # uses your existing conversion
+                    ims_dict[f"{prefix}/{label}"] = wandb.Image(image_numpy, caption=f"{label} - Step {total_iters}")
+                if ims_dict:
+                    self.wandb_run.log(ims_dict, step=total_iters)
+
     def reset(self):
         """Reset the self.saved status"""
         self.saved = False

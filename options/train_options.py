@@ -31,6 +31,16 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--lr_policy', type=str, default='linear', help='learning rate policy. [linear | step | plateau | cosine]')
         parser.add_argument('--lr_decay_iters', type=int, default=50, help='multiply by a gamma every lr_decay_iters iterations')
         parser.add_argument('--monkey', action='store_true', help='flag to do stain norm')
+        parser.add_argument('--debug_num_batches', type=int, default=-1,
+                         help='limit number of train batches per epoch; -1 = all')
+        parser.add_argument('--eval_freq', type=int, default=5000,
+                         help='iterations between eval hooks (FID/SSIM/PSNR)')
+        parser.add_argument('--eval_batches', type=int, default=50,
+                                help='max val batches per eval to bound cost')
+        parser.add_argument('--eval_use_fid', action='store_true',
+                                help='compute FID during eval (slower)')
+        parser.add_argument('--val_phase', type=str, default='test',
+                                help='dataset phase name for validation (expects valA/valB)')
 
         self.isTrain = True
         return parser

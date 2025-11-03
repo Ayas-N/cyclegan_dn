@@ -18,7 +18,12 @@ class TestOptions(BaseOptions):
         # rewrite devalue values
         parser.add_argument('--monkey', action='store_true', help='flag to do stain norm')
         parser.set_defaults(model='test')
-        # To avoid cropping, the load_size should be the same as crop_size
+        # test_options.py  (inside parser setup)
+        parser.add_argument('--filelist_A', type=str, default='',
+                                help='Text file: one path per line for domain A (skips directory walk)')
+        parser.add_argument('--filelist_B', type=str, default='',
+                                help='Text file: one path per line for domain B (optional)')
+                # To avoid cropping, the load_size should be the same as crop_size
         parser.set_defaults(load_size=parser.get_default('crop_size'))
         self.isTrain = False
         return parser

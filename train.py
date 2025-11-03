@@ -20,11 +20,48 @@ See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-a
 """
 
 import time
+import copy, torch
+from metrics import FIDSSIMPSNR
 from options.train_options import TrainOptions
 from data import create_dataset
 from models import create_model
 from util.visualizer import Visualizer
 from util.util import init_ddp, cleanup_ddp
+
+@torch.no_grad()
+def evaluate(model, dataset, max_batches=50, use_fid=True):
+    opt = TrainOptions().parse()  
+    meter = FIDSSIMPSNR(device='cuda', use_fid=use_fid)
+    meter.reset()
+    # Many dataset wrappers in this repo support .reset(); safe to guard
+    if hasattr(dataset, 'reset'):
+        dataset.reset()
+
+    for i, data in enumerate(dataset):
+        if i >= max_batches:
+            break
+        # 1) prepare inputs
+        model.set_input(data)   # expects dict with 'A','B'
+        # 2) forward in inference mode
+        model.test()            # runs generators only, no grads
+        # 3) grab tensors in [-1,1]
+        real_A = model.real_A
+        real_B = model.real_B
+        fake_B = model.fake_B   # A -> B
+        rec_A  = model.rec_A    # A -> B -> A
+        fake_A = model.fake_A   # B -> A
+        rec_B  = model.rec_B    # B -> A -> B
+
+        # cycle structure metrics
+        meter.update_cycle_A(real_A, rec_A)
+        meter.update_cycle_B(real_B, rec_B)
+
+        # FID distribution metrics (unpaired)
+        if use_fid:
+            meter.update_fid_A2B(real_B, fake_B)
+            meter.update_fid_B2A(real_A, fake_A)
+
+    return meter.compute()
 
 
 if __name__ == "__main__":
@@ -33,6 +70,12 @@ if __name__ == "__main__":
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     dataset_size = len(dataset)  # get the number of images in the dataset.
     print(f"The number of training images = {dataset_size}")
+    val_opt = copy.deepcopy(opt)
+    val_opt.phase = getattr(opt, 'val_phase', 'test')
+    val_opt.serial_batches = True      
+    val_opt.max_dataset_size = 100000  
+    val_dataset = create_dataset(val_opt)  # same factory you use for train
+
 
     model = create_model(opt)  # create a model given opt.model and other options
     model.setup(opt)  # regular setup: load and print networks; create schedulers
@@ -52,6 +95,9 @@ if __name__ == "__main__":
             if total_iters % opt.print_freq == 0:
                 t_data = iter_start_time - iter_data_time
 
+            if 0 <= opt.debug_num_batches <= i:
+                break
+
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
             model.set_input(data)  # unpack data from dataset and apply preprocessing
@@ -59,6 +105,10 @@ if __name__ == "__main__":
 
             if total_iters % opt.display_freq == 0:  # display images on visdom and save images to a HTML file
                 save_result = total_iters % opt.update_html_freq == 0
+                device = next(model.parameters()).device if hasattr(model, 'parameters') else 'cuda'
+                metrics = evaluate(model, val_dataset,
+                                max_batches=opt.eval_batches,
+                                use_fid=opt.eval_use_fid)
                 model.compute_visuals()
                 visualizer.display_current_results(model.get_current_visuals(), epoch, total_iters, save_result)
 
@@ -72,6 +122,17 @@ if __name__ == "__main__":
                 print(f"saving the latest model (epoch {epoch}, total_iters {total_iters})")
                 save_suffix = f"iter_{total_iters}" if opt.save_by_iter else "latest"
                 model.save_networks(save_suffix)
+
+            if opt.eval_freq > 0 and (total_iters % opt.eval_freq == 0):
+                metrics = evaluate(model, val_dataset,
+                                max_batches=opt.eval_batches,
+                                use_fid=opt.eval_use_fid)
+                # print or plot
+                print(f"[eval @ iters={total_iters}] " +
+                      
+                    " ".join([f"{k}={v:.4f}" for k,v in metrics.items()]))
+                visualizer.log_eval_metrics(total_iters, metrics, prefix="eval")
+
 
             iter_data_time = time.time()
 

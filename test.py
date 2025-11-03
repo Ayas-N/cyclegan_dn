@@ -36,6 +36,7 @@ from util.visualizer import save_images
 from util import html
 import torch
 import re
+from metrics import FIDSSIMPSNR  
 
 from models.dense_norm_core import (
     init_dense_norm,
@@ -76,26 +77,25 @@ if __name__ == "__main__":
     opt.batch_size = 1  # test code only supports batch_size = 1
     opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
     opt.no_flip = True  # no flip; comment this line if results on flipped images are needed.
-    
+    _meter = FIDSSIMPSNR(device=opt.device, use_fid=False)  # PSNR+SSIM only
+    _meter.reset()
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     model = create_model(opt)  # create a model given opt.model and other options
     model.setup(opt)  # regular setup: load and print networks; create schedulers
     grid_h, grid_w = _infer_grid_shape(create_dataset, opt)
-    init_dense_norm(model.netG_A, y_anchor_num=grid_h, x_anchor_num=grid_w)
-    init_dense_norm(model.netG_B, y_anchor_num=grid_h, x_anchor_num=grid_w) 
-    # COLLECTION PASS (fast): iterate once so DN can collect mean/std per anchor.
-    collect_dataset = create_dataset(opt)   # fresh iterator
+    # init_dense_norm(model.netG_A, y_anchor_num=grid_h, x_anchor_num=grid_w)
+    # init_dense_norm(model.netG_B, y_anchor_num=grid_h, x_anchor_num=grid_w) 
+    # collect_dataset = create_dataset(opt)   # fresh iterator
     model.eval()
-    with torch.no_grad():
-        for data in collect_dataset:
-            model.set_input(data)       
-            model.forward()
-            _ = model.netG_A(model.real_A)  
-    # Switch DN to interpolation ("use") mode with a 1-neighborhood padding
-    # not_use_dense_norm(model.netG_A)
-    # not_use_dense_norm(model.netG_B)
-    use_dense_norm(model.netG_A, padding = 1)
-    use_dense_norm(model.netG_B, padding = 1)
+    # with torch.no_grad():
+    #     for data in collect_dataset:
+    #         model.set_input(data)       
+    #         model.forward()
+    #         _ = model.netG_A(model.real_A)  
+    not_use_dense_norm(model.netG_A)
+    not_use_dense_norm(model.netG_B)
+    # use_dense_norm(model.netG_A, padding = 1)
+    # use_dense_norm(model.netG_B, padding = 1)
 
     # create a website
     web_dir = Path(opt.results_dir) / opt.name / f"{opt.phase}_{opt.epoch}"  
@@ -103,9 +103,6 @@ if __name__ == "__main__":
         web_dir = Path(f"{web_dir}_iter{opt.load_iter}")
     print(f"creating web directory {web_dir}")
     webpage = html.HTML(web_dir, f"Experiment = {opt.name}, Phase = {opt.phase}, Epoch = {opt.epoch}")
-    # test with eval mode. This only affects layers like batchnorm and dropout.
-    # For [pix2pix]: we use batchnorm and dropout in the original pix2pix. You can experiment it with and without eval() mode.
-    # For [CycleGAN]: It should not affect CycleGAN as CycleGAN uses instancenorm without dropout.
     if opt.eval:
         model.eval()
     for i, data in enumerate(dataset):
@@ -115,10 +112,27 @@ if __name__ == "__main__":
         model.test()  # run inference
         visuals = model.get_current_visuals()  # get image results
         img_path = model.get_image_paths()  # get image paths
+        # PSNR / SSIM on cycle reconstructions (unpaired-safe)
+        if hasattr(model, 'real_A') and hasattr(model, 'rec_A'):
+            _meter.update_cycle_A(model.real_A, model.rec_A)  # A -> B -> A
+        if hasattr(model, 'real_B') and hasattr(model, 'rec_B'):
+            _meter.update_cycle_B(model.real_B, model.rec_B)  # B -> A -> B
+
         if i % 5 == 0:  # save images to an HTML file
             print(f"processing ({i:04d})-th image... {img_path}")
-        if 'fake_A' not in visuals: 
-            continue
-        visuals = {'fake_A': visuals['fake_A']}
+        if opt.direction == "AtoB":
+            visuals = {'fake_B': visuals['fake_B']}
+        elif opt.direction == "BtoA":
+            visuals = {'fake_A': visuals['fake_A']}
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)
+
+    metrics = _meter.compute()  # {'ssim_cycle_A':..., 'psnr_cycle_A':..., ...}
+    # print to console (rounded) and save alongside results
+    print("[test metrics]", {k: round(v, 4) for k, v in metrics.items()})
+    out = "metrics_test.txt"
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    write_header = (not os.path.exists(out)) or (os.path.getsize(out) == 0)
+    with open(os.path.join(web_dir, out), "a") as f:
+        for k, v in sorted(metrics.items()):
+            f.write(f"{k}: {v:.6f}\n")
     webpage.save()  # save the HTML
