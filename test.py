@@ -122,6 +122,9 @@ if __name__ == "__main__":
             print(f"processing ({i:04d})-th image... {img_path}")
         if opt.direction == "AtoB":
             visuals = {'fake_B': visuals['fake_B']}
+            if opt.gen_test:
+                visuals = {'fake_A': visuals['fake_A']}
+            
         elif opt.direction == "BtoA":
             visuals = {'fake_A': visuals['fake_A']}
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)

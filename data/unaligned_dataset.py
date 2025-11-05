@@ -73,4 +73,7 @@ class UnalignedDataset(BaseDataset):
         As we have two datasets with potentially different number of images,
         we take a maximum of
         """
+        # For B->A test runs, iterate only over B images once
+        if (not self.opt.isTrain) and getattr(self.opt, "gen_test", False) is True:
+            return self.B_size
         return max(self.A_size, self.B_size)

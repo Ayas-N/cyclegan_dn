@@ -27,6 +27,8 @@ def save_images(webpage, visuals, image_path, aspect_ratio=1.0, width=256):
     code2dir = {'b': 'Benign', 'is': 'Insitu', 'iv': 'Invasive', 'n': 'Normal'}
     m = re.search(r'(?:^|_)(b|is|iv|n)\d+', name.lower())
     class_dir = code2dir.get(m.group(1), 'Unknown') if m else 'Unknown'
+    # If it's Unknown right now then check for NCT class
+    if class_dir is 'Unknown': class_dir = name.split("_")[3].split("-")[0]
     # subfolder under the webpage's images directory
     dest_dir = image_dir / class_dir
     dest_dir.mkdir(parents=True, exist_ok=True)
