@@ -120,10 +120,13 @@ if __name__ == "__main__":
 
         if i % 5 == 0:  # save images to an HTML file
             print(f"processing ({i:04d})-th image... {img_path}")
-        if opt.direction == "AtoB":
+        if opt.gen_test:
+            visuals = {'fake_A': visuals['fake_A']}
+            if 'B_paths' in data:
+                img_path = data['B_paths']
+
+        elif opt.direction == "AtoB":
             visuals = {'fake_B': visuals['fake_B']}
-            if opt.gen_test:
-                visuals = {'fake_A': visuals['fake_A']}
             
         elif opt.direction == "BtoA":
             visuals = {'fake_A': visuals['fake_A']}

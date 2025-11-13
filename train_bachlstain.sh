@@ -1,9 +1,14 @@
 set -ex
 DATAROOT="../lstainbach_cycle"
-torchrun --nproc_per_node=2 train.py --dataroot "$DATAROOT" --name cycle_test --model cycle_gan --phase train --no_dropout --load_size 512 --crop_size 512 --use_wandb --batch_size 4 --debug_num_batches 1000 --eval_freq 2000 --val_phase test
+NAME="bach_srch_dst"
 
-python test.py --dataroot "$DATAROOT" --model cycle_gan --phase test --load_size 512 --crop_size 512 --name cycle_test --norm dense --direction AtoB --results bach_dense1
-python test.py --dataroot "$DATAROOT" --model cycle_gan --phase train --load_size 512 --crop_size 512 --name cycle_test --norm dense --direction AtoB --results bach_dense2
-python merge_images.py --src bach_dense1/cycle_test/test_latest/images bach_dense2/cycle_test/train_latest/images --dst ../datasets/lstainbach_cycle --suffix train test
+python test.py --dataroot "$DATAROOT" --model cycle_gan --phase test --load_size 512 --crop_size 512 --name $NAME --norm dense --direction AtoB --results bach_1 --gen_test
+mv  ./bach_1/$NAME/test_latest/images ../datasets/lstaingan_dst_test
 cd ../colo_class
-bash run_bach.sh
+python test.py \
+    --dataroot train_folder \
+    --testroot $NAME \
+    --batch_size 4 \
+    --num_workers 4 \
+    --gpu_id 1 \
+    --checkpoint lstain_bach_train_best_no_norm_.pth 

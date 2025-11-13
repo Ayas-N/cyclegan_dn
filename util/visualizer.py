@@ -28,7 +28,15 @@ def save_images(webpage, visuals, image_path, aspect_ratio=1.0, width=256):
     m = re.search(r'(?:^|_)(b|is|iv|n)\d+', name.lower())
     class_dir = code2dir.get(m.group(1), 'Unknown') if m else 'Unknown'
     # If it's Unknown right now then check for NCT class
-    if class_dir is 'Unknown': class_dir = name.split("_")[3].split("-")[0]
+    if class_dir == 'Unknown':
+        nct_codes = {"ADI", "BACK", "DEB", "LYM", "MUC", "MUS", "NORM", "STR", "TUM"}
+        # split on "_" and "-" and look for any token matching one of the NCT codes
+        tokens = re.split(r'[_\-]', name)
+        nct_match = next((t for t in tokens if t.upper() in nct_codes), None)
+        if nct_match:
+            class_dir = nct_match.upper()
+        else:
+            class_dir = 'Unknown'
     # subfolder under the webpage's images directory
     dest_dir = image_dir / class_dir
     dest_dir.mkdir(parents=True, exist_ok=True)
